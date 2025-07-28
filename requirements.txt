@@ -1,6 +1,6 @@
-streamlit>=1.30
-tensorflow>=2.12
-numpy>=1.24
-Pillow>=10.0
-matplotlib>=3.6
-fpdf>=1.7
+streamlit>=1.30,<2.0
+tensorflow>=2.12,<2.19
+numpy>=1.24,<2.0
+Pillow>=10.0,<11.0
+matplotlib>=3.6,<4.0
+fpdf>=1.7,<2.0

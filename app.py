@@ -4,6 +4,7 @@ from PIL import Image
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from tensorflow.keras.applications import Xception
 from fpdf import FPDF
 import io
 

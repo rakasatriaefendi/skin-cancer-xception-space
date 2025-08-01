@@ -1,9 +1,13 @@
+# ====== [IMPORT & PAGE CONFIG] ======
 import streamlit as st
-import tensorflow as tf
-import numpy as np
 from PIL import Image
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
 from fpdf import FPDF
 import io
+
+st.set_page_config(page_title="Skin Cancer Classifier", layout="wide")
 
 # ====== [LABEL & PENJELASAN] ======
 folder_to_label = {
@@ -68,67 +72,87 @@ disease_info = {
     }
 }
 
-# Model dan class list (harus sesuai urutan model output)
-class_keys = list(folder_to_label.keys())
-
+# ====== [LOAD MODEL] ======
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model("trained_model.h5", compile=False)
-
+    return tf.keras.models.load_model("trained_model.h5")
 model = load_model()
 
-def predict(image):
-    image = image.resize((224, 224))
-    image_array = tf.keras.utils.img_to_array(image) / 255.0
-    image_array = np.expand_dims(image_array, axis=0)
-    predictions = model.predict(image_array)[0]
-    confidence = np.max(predictions)
-    index = np.argmax(predictions)
-    key = class_keys[index]
-    return key, confidence, predictions
+# ====== [UI - JUDUL & UPLOAD] ======
+st.title("🔬 Skin Cancer Detection from Image")
+st.markdown("Upload gambar kulit untuk memprediksi jenis lesi dan mendapatkan informasi medis edukatif.")
 
-def generate_pdf(info, confidence):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=14)
-    pdf.cell(200, 10, txt="Hasil Klasifikasi Citra Penyakit Kulit", ln=True, align='C')
-    pdf.ln(10)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, f"Label Prediksi: {info['name']}\nKategori: {info['category']}\nConfidence: {confidence:.2%}")
-    pdf.ln(5)
-    pdf.multi_cell(0, 10, f"Deskripsi:\n{info['description']}")
-    pdf.ln(5)
-    pdf.multi_cell(0, 10, f"Penanganan:\n{info['treatment']}")
-    pdf.ln(5)
-    pdf.multi_cell(0, 10, f"Rekomendasi:\n{info['recommendation']}")
-    pdf_output = io.BytesIO()
-    pdf.output(pdf_output)
-    pdf_output.seek(0)
-    return pdf_output
+uploaded_file = st.file_uploader("📤 Upload a skin image", type=["jpg", "jpeg", "png"])
 
-# UI
-st.title("🔬 Klasifikasi Citra Penyakit Kulit")
-st.markdown("Unggah gambar kulit untuk mendapatkan prediksi penyakit berdasarkan model CNN.")
-
-uploaded_file = st.file_uploader("📤 Unggah gambar (jpg/jpeg/png)", type=["jpg", "jpeg", "png"])
-
+# ====== [JIKA FILE DIUPLOAD] ======
 if uploaded_file is not None:
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="📷 Gambar yang diunggah", use_column_width=True)
+    col1, col2 = st.columns([1, 2])
 
-    with st.spinner("🔍 Memprediksi..."):
-        key, confidence, _ = predict(image)
-        info = disease_info[key]
+    with col1:
+        image = Image.open(uploaded_file).convert("RGB")
+        st.image(image, caption="🖼️ Gambar yang Diunggah", use_column_width=True)
 
-        st.success(f"✅ Prediksi: **{info['name']}**")
-        st.info(f"🧠 Tingkat Keyakinan: **{confidence:.2%}**")
-        st.write(f"**Kategori:** {info['category']}")
-        st.write("### 📝 Deskripsi Medis")
-        st.write(info['description'])
-        st.write("### 💊 Penanganan")
-        st.write(info['treatment'])
-        st.write("### 📌 Rekomendasi")
-        st.write(info['recommendation'])
+    with col2:
+        resized_image = image.resize((224, 224))
+        img_array = np.array(resized_image) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
 
-        pdf = generate_pdf(info, confidence)
-        st.download_button("📄 Unduh Laporan PDF", data=pdf, file_name="hasil_prediksi.pdf", mime="application/pdf")
+        prediction = model.predict(img_array)
+        pred_class = int(np.argmax(prediction, axis=1)[0])
+        confidence = float(prediction[0][pred_class])
+
+        label = list(folder_to_label.values())[pred_class]
+        result_label, result_category = label
+
+        st.success(f"✅ Hasil Prediksi: {result_label}")
+        st.write(f"📂 Kategori: **{result_category}**")
+        st.progress(int(confidence * 100))
+        st.markdown(f"### 🔒 Confidence: **{confidence:.2%}**")
+
+        # ====== [PLOT KONFIDENSI] ======
+        class_names = [v[0] for v in folder_to_label.values()]
+        plt.figure(figsize=(10, 3))
+        plt.bar(class_names, prediction[0], color='skyblue')
+        plt.xticks(rotation=30)
+        plt.ylabel("Confidence")
+        plt.title("Confidence per Class")
+        st.pyplot(plt)
+
+        # ====== [INFO MEDIS] ======
+        info = list(disease_info.values())[pred_class]
+        with st.expander("🧾 Informasi Medis Lengkap"):
+            st.markdown(f"### 🧬 {info['name']} ({info['category']})")
+            st.write(f"**Deskripsi:** {info['description']}")
+            st.write(f"**Penanganan:** {info['treatment']}")
+            st.info(info['recommendation'])
+
+        # ====== [PDF GENERATOR FIXED] ======
+        def generate_pdf():
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            pdf.cell(200, 10, txt="Skin Lesion Classification Report", ln=True, align="C")
+            pdf.ln(10)
+            pdf.cell(200, 10, txt=f"Predicted Class: {result_label}", ln=True)
+            pdf.cell(200, 10, txt=f"Category: {result_category}", ln=True)
+            pdf.cell(200, 10, txt=f"Confidence: {confidence:.2%}", ln=True)
+            pdf.ln(5)
+            pdf.multi_cell(0, 10, f"Description: {info['description']}")
+            pdf.multi_cell(0, 10, f"Treatment: {info['treatment']}")
+            pdf.multi_cell(0, 10, f"Recommendation: {info['recommendation']}")
+            pdf.ln(10)
+            pdf.set_text_color(128)
+            pdf.set_font("Arial", "I", 10)
+            pdf.multi_cell(0, 10, "Disclaimer: This is not a formal diagnosis. Always consult a medical professional.")
+
+            # ✅ Output as bytes and wrap in BytesIO
+            pdf_bytes = pdf.output(dest='S').encode('latin1')
+            return io.BytesIO(pdf_bytes)
+
+        pdf_file = generate_pdf()
+        st.download_button(
+            label="📄 Download Laporan PDF",
+            data=pdf_file,
+            file_name="skin_lesion_report.pdf",
+            mime="application/pdf"
+        )
